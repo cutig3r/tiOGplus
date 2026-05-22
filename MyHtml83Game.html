@@ -1,0 +1,1146 @@
+<!-- Grand Theft Auto (TI-83+ BASIC) — browser engine
+     Faithful re-implementation of Cody Gentry's GTA.8XG (2000).
+     Save/load intentionally disabled. -->
+<style>
+  :root{
+    --case:#3a3f37; --case2:#2b2f28; --bezel:#15170f;
+    --lcd:#9ab07a; --lcd-dark:#3a4a26; --ink:#16210a;
+    --key:#42463d; --key-top:#54584d; --label:#cfd6c2;
+    --accent:#c6d29c;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:
+      radial-gradient(120% 80% at 50% -10%, #4a5043 0%, #23271f 60%, #15170f 100%);
+    font-family:'Courier New',ui-monospace,monospace;
+    color:var(--label);
+    display:flex;align-items:center;justify-content:center;
+    flex-direction:column;
+    min-height:100vh;padding:18px;
+    gap:14px;
+  }
+  .calc{
+    width:340px;background:linear-gradient(180deg,var(--case),var(--case2));
+    border-radius:26px 26px 30px 30px;
+    padding:18px 18px 26px;
+    box-shadow:
+      inset 0 2px 0 #5a5f51, inset 0 -10px 24px #000a,
+      0 24px 60px #000c, 0 2px 0 #0008;
+    border:1px solid #1c1f17;
+  }
+  /* Calculator can hold keyboard focus, but should never show a focus ring. */
+  .calc:focus,
+  .calc:focus-visible,
+  .calc:focus-within{
+    outline:none;
+  }
+  .brand{
+    display:flex;justify-content:space-between;align-items:baseline;
+    font-weight:700;letter-spacing:.5px;color:var(--accent);
+    font-size:11px;padding:0 4px 8px;text-transform:uppercase;
+  }
+  .brand small{opacity:.6;font-weight:400;letter-spacing:1px}
+  .bezel{
+    background:linear-gradient(180deg,#0c0e08,#1a1d12);
+    border-radius:10px;padding:14px;border:1px solid #000;
+    box-shadow:inset 0 3px 10px #000c;
+  }
+  .screen{
+    image-rendering:pixelated;width:100%;height:auto;display:block;
+    background:var(--lcd);border-radius:3px;
+    box-shadow:0 0 0 2px #2a3318, inset 0 0 24px #5e7340;
+  }
+  .scanlines{position:relative}
+  .scanlines::after{
+    content:"";position:absolute;inset:0;border-radius:3px;pointer-events:none;
+    background:repeating-linear-gradient(0deg,#0000 0 3px,#0002 3px 4px);
+    mix-blend-mode:multiply;opacity:.5;
+  }
+  .keys{margin-top:16px;display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+  .keys .row{display:contents}
+  /* Pre-init guard: keep keypad visually disabled until JS activates keys. */
+  .keys.booting .k{
+    opacity:.32; filter:grayscale(.6) brightness(.7);
+    cursor:default; color:#8d9381;
+    box-shadow:0 1px 0 #1c1f17, inset 0 1px 0 #4a4e44;
+    pointer-events:none;
+  }
+  .keys.booting .k[data-key="enter"]{
+    opacity:1; filter:none;
+    cursor:pointer; color:#10160a;
+    box-shadow:0 2px 0 #1c1f17, inset 0 1px 0 #6c7163;
+    background:linear-gradient(180deg,#7a8a55,#5e6c3e);
+    pointer-events:auto;
+  }
+  button.k{
+    appearance:none;border:none;cursor:pointer;color:var(--label);
+    font-family:inherit;font-weight:700;font-size:12px;
+    background:linear-gradient(180deg,var(--key-top),var(--key));
+    border-radius:7px;padding:11px 4px;
+    box-shadow:0 2px 0 #1c1f17, inset 0 1px 0 #6c7163;
+    transition:transform .04s, box-shadow .04s, opacity .1s, filter .1s, background .04s;
+    user-select:none;min-height:38px;line-height:1.05;
+    outline:none;
+  }
+  /* Keyboard focus ring (shown when tabbing, not on mouse taps). */
+  button.k:focus,
+  button.k:focus-visible{
+    box-shadow:0 2px 0 #1c1f17, inset 0 1px 0 #6c7163,
+               0 0 0 2px #10160a, 0 0 0 4px var(--accent);
+  }
+  /* DISABLED keys: dim, desaturated, flattened, no pointer. */
+  button.k.off{
+    opacity:.32; filter:grayscale(.6) brightness(.7);
+    cursor:default; color:#8d9381;
+    box-shadow:0 1px 0 #1c1f17, inset 0 1px 0 #4a4e44;
+  }
+  button.k.off:active,
+  button.k.off.pressed{ transform:none; } /* disabled keys don't depress */
+  button.k:active,
+  button.k.pressed{transform:translateY(2px);box-shadow:0 0 0 #1c1f17,inset 0 1px 0 #6c7163}
+  /* keyboard-driven flash: brief brightened key-top so it's clearly "pressed" */
+  button.k.pressed{
+    background:linear-gradient(180deg,#7e8472,#646a5b);
+  }
+  button.k.wide{grid-column:span 2}
+  button.k.enter{
+    background:linear-gradient(180deg,#7a8a55,#5e6c3e);color:#10160a;
+    grid-column:span 2;
+  }
+  button.k.enterfull{ grid-column:1 / -1; } /* full-width single ENTER */
+  button.k.c2{ grid-column:2 }   /* numeric pad centered in cols 2-4 */
+  button.k.c3{ grid-column:3 }
+  button.k.c4{ grid-column:4 }
+  button.k.dir{font-size:14px}
+  button.k.dim{opacity:.55}
+  .hint{
+    text-align:center;color:var(--accent);opacity:.65;font-size:10px;
+    margin-top:14px;letter-spacing:.4px;
+  }
+  .topbtns{display:flex;gap:8px;justify-content:center;margin-top:12px}
+  .topbtns button{
+    flex:1;font-size:10px;letter-spacing:.5px;text-transform:uppercase;
+    background:#23271f;color:var(--accent);border:1px solid #000;
+    border-radius:6px;padding:8px;cursor:pointer;font-family:inherit;
+  }
+  .topbtns button:active{background:#171a12}
+  .topbtns button:focus,
+  .topbtns button:focus-visible{
+    outline:none;
+    box-shadow:0 0 0 2px #10160a, 0 0 0 4px var(--accent);
+  }
+  .kbdinfo{
+    width:340px;
+    border:1px solid #1c1f17;
+    border-radius:10px;
+    background:linear-gradient(180deg,#2a2e26,#1f221c);
+    box-shadow:inset 0 1px 0 #59604f, 0 8px 18px #0008;
+    padding:10px 12px;
+    color:var(--accent);
+  }
+  .kbdinfo h3{
+    margin:0 0 8px;
+    font-size:11px;
+    letter-spacing:1px;
+    text-transform:uppercase;
+    font-weight:700;
+  }
+  .kbdgrid{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:6px 12px;
+    font-size:10px;
+    line-height:1.3;
+  }
+  .kbdgrid div{opacity:.9}
+  .kbdgrid b{color:var(--label);font-weight:700}
+  @media (min-width:860px){
+    body{
+      flex-direction:row;
+      align-items:flex-start;
+      gap:20px;
+    }
+  }
+  @media (max-width:420px){
+    .calc,.kbdinfo{width:min(340px,calc(100vw - 24px));}
+    .kbdgrid{grid-template-columns:1fr;}
+  }
+</style>
+
+<div class="calc" id="calc" tabindex="0" aria-label="Calculator">
+  <div class="brand"><span>TI-OG Plus</span><small>GTA · cody software inc.</small></div>
+  <div class="bezel scanlines">
+    <canvas class="screen" id="scr" width="96" height="64" aria-label="Calculator screen"></canvas>
+  </div>
+
+  <div class="topbtns">
+    <button id="btnReset">Reboot Calculator</button>
+    <button id="btnCheat">Activate Cheat (max all stats)</button>
+  </div>
+
+  <div class="keys booting" id="keypad" aria-busy="true">
+    <div class="row">
+      <button class="k dir" data-key="up">▲</button>
+      <button class="k dir" data-key="down">▼</button>
+      <button class="k" data-key="clear">CLR</button>
+      <button class="k" data-key="del">DEL</button>
+      <button class="k" data-key="alpha">A-Z</button>
+    </div>
+    <div class="row">
+      <button class="k" data-key="1">1</button>
+      <button class="k" data-key="2">2</button>
+      <button class="k" data-key="3">3</button>
+      <button class="k" data-key="4">4</button>
+      <button class="k" data-key="5">5</button>
+    </div>
+    <div class="row">
+      <button class="k" data-key="6">6</button>
+      <button class="k" data-key="7">7</button>
+      <button class="k" data-key="8">8</button>
+      <button class="k" data-key="9">9</button>
+      <button class="k" data-key="0">0</button>
+    </div>
+    <div class="row">
+      <button class="k enter enterfull" data-key="enter">ENTER</button>
+    </div>
+  </div>
+  <div class="hint">↑/↓ dial letters / digits / space · A-Z adds a letter (SPACE adds a space) · ENTER selects, mashes jobs, confirms · DEL / CLR edit</div>
+</div>
+
+<section class="kbdinfo" aria-label="Keyboard navigation">
+  <h3>Keyboard Navigation</h3>
+  <div class="kbdgrid">
+    <div><b>Enter</b> = Select / Confirm</div>
+    <div><b>Space</b> = Enter (except NAME)</div>
+    <div><b>Tab / Shift+Tab</b> = Move focus</div>
+    <div><b>Focused button</b> = Space / Enter click</div>
+    <div><b>Arrow Up/Down</b> = Move / Dial</div>
+    <div><b>0-9</b> = Number input</div>
+    <div><b>A-Z</b> = Type letters (NAME)</div>
+    <div><b>Backspace/Delete</b> = DEL</div>
+    <div><b>Escape</b> = CLR</div>
+    <div><b>Tip:</b> click page to route keys</div>
+  </div>
+</section>
+
+<script>
+"use strict";
+/* ===========================================================================
+   GRAND THEFT AUTO — TI-83+ engine, faithful JS port.
+   The original is a set of TI-BASIC programs that share global vars via lists.
+   We model the same globals and the same control flow as cooperating
+   coroutines driven by a tiny screen + key abstraction.
+   ===========================================================================*/
+
+/* ---- 1. The "calculator screen": 96x64 mono LCD, 16x8 text grid --------- */
+const CW=96, CH=64, COLS=16, ROWS=8, GX=6, GY=8; // glyph cell 6x8
+const calcEl=document.getElementById('calc');
+const cnv=document.getElementById('scr'), ctx=cnv.getContext('2d');
+const btnResetEl=document.getElementById('btnReset');
+const btnCheatEl=document.getElementById('btnCheat');
+ctx.imageSmoothingEnabled=false;
+const ON='#16210a', OFF='#9ab07a';
+
+// 5x7 pixel font (uppercase, digits, basic punctuation) packed as row bitmasks.
+const FONT=(()=>{
+  // each glyph: 7 bytes, low 5 bits used, top bit unused
+  const F={};
+  const def=(c,rows)=>F[c]=rows;
+  // Minimal but complete enough set. Rows are 5-wide.
+  def(' ',[0,0,0,0,0,0,0]);
+  def('A',[0x0E,0x11,0x11,0x1F,0x11,0x11,0x11]);
+  def('B',[0x1E,0x11,0x11,0x1E,0x11,0x11,0x1E]);
+  def('C',[0x0E,0x11,0x10,0x10,0x10,0x11,0x0E]);
+  def('D',[0x1E,0x11,0x11,0x11,0x11,0x11,0x1E]);
+  def('E',[0x1F,0x10,0x10,0x1E,0x10,0x10,0x1F]);
+  def('F',[0x1F,0x10,0x10,0x1E,0x10,0x10,0x10]);
+  def('G',[0x0E,0x11,0x10,0x17,0x11,0x11,0x0F]);
+  def('H',[0x11,0x11,0x11,0x1F,0x11,0x11,0x11]);
+  def('I',[0x0E,0x04,0x04,0x04,0x04,0x04,0x0E]);
+  def('J',[0x07,0x02,0x02,0x02,0x12,0x12,0x0C]);
+  def('K',[0x11,0x12,0x14,0x18,0x14,0x12,0x11]);
+  def('L',[0x10,0x10,0x10,0x10,0x10,0x10,0x1F]);
+  def('M',[0x11,0x1B,0x15,0x15,0x11,0x11,0x11]);
+  def('N',[0x11,0x19,0x15,0x13,0x11,0x11,0x11]);
+  def('O',[0x0E,0x11,0x11,0x11,0x11,0x11,0x0E]);
+  def('P',[0x1E,0x11,0x11,0x1E,0x10,0x10,0x10]);
+  def('Q',[0x0E,0x11,0x11,0x11,0x15,0x12,0x0D]);
+  def('R',[0x1E,0x11,0x11,0x1E,0x14,0x12,0x11]);
+  def('S',[0x0F,0x10,0x10,0x0E,0x01,0x01,0x1E]);
+  def('T',[0x1F,0x04,0x04,0x04,0x04,0x04,0x04]);
+  def('U',[0x11,0x11,0x11,0x11,0x11,0x11,0x0E]);
+  def('V',[0x11,0x11,0x11,0x11,0x11,0x0A,0x04]);
+  def('W',[0x11,0x11,0x11,0x15,0x15,0x1B,0x11]);
+  def('X',[0x11,0x11,0x0A,0x04,0x0A,0x11,0x11]);
+  def('Y',[0x11,0x11,0x0A,0x04,0x04,0x04,0x04]);
+  def('Z',[0x1F,0x01,0x02,0x04,0x08,0x10,0x1F]);
+  def('0',[0x0E,0x11,0x13,0x15,0x19,0x11,0x0E]);
+  def('1',[0x04,0x0C,0x04,0x04,0x04,0x04,0x0E]);
+  def('2',[0x0E,0x11,0x01,0x02,0x04,0x08,0x1F]);
+  def('3',[0x1F,0x02,0x04,0x02,0x01,0x11,0x0E]);
+  def('4',[0x02,0x06,0x0A,0x12,0x1F,0x02,0x02]);
+  def('5',[0x1F,0x10,0x1E,0x01,0x01,0x11,0x0E]);
+  def('6',[0x06,0x08,0x10,0x1E,0x11,0x11,0x0E]);
+  def('7',[0x1F,0x01,0x02,0x04,0x08,0x08,0x08]);
+  def('8',[0x0E,0x11,0x11,0x0E,0x11,0x11,0x0E]);
+  def('9',[0x0E,0x11,0x11,0x0F,0x01,0x02,0x0C]);
+  def('!',[0x04,0x04,0x04,0x04,0x04,0x00,0x04]);
+  def('?',[0x0E,0x11,0x01,0x02,0x04,0x00,0x04]);
+  def('.',[0,0,0,0,0,0x0C,0x0C]);
+  def(',',[0,0,0,0,0,0x04,0x08]);
+  def('-',[0,0,0,0x1F,0,0,0]);
+  def('/',[0x01,0x02,0x02,0x04,0x08,0x08,0x10]);
+  def('$',[0x04,0x0F,0x14,0x0E,0x05,0x1E,0x04]);
+  def('+',[0,0x04,0x04,0x1F,0x04,0x04,0]);
+  def(':',[0,0x0C,0x0C,0,0x0C,0x0C,0]);
+  def("'",[0x04,0x04,0x08,0,0,0,0]);
+  def('(',[0x02,0x04,0x08,0x08,0x08,0x04,0x02]);
+  def(')',[0x08,0x04,0x02,0x02,0x02,0x04,0x08]);
+  def('#',[0x0A,0x1F,0x0A,0x0A,0x1F,0x0A,0]);
+  def('*',[0,0x04,0x15,0x0E,0x15,0x04,0]);
+  def('>',[0x08,0x0C,0x0E,0x0F,0x0E,0x0C,0x08]); // TI menu selection cursor (filled triangle)
+  def('<',[0x02,0x06,0x0E,0x1E,0x0E,0x06,0x02]);
+  def('_',[0,0,0,0,0,0,0x1F]); // input cursor underscore (baseline bar)
+  return F;
+})();
+
+function clearScreen(){ ctx.fillStyle=OFF; ctx.fillRect(0,0,CW,CH); }
+function px(x,y,on=true){ ctx.fillStyle=on?ON:OFF; ctx.fillRect(x,y,1,1); }
+function drawChar(ch,cx,cy){
+  const g=FONT[ch.toUpperCase()]||FONT['?'];
+  for(let r=0;r<7;r++){const bits=g[r];for(let c=0;c<5;c++){if(bits&(1<<(4-c)))px(cx+c,cy+r);}}
+}
+// text grid: 16 cols x 8 rows (col*6, row*8)
+function gridText(row,col,str){
+  str=String(str);
+  for(let i=0;i<str.length;i++){
+    const c=col+i; if(c>=COLS||c<0) continue;
+    drawChar(str[i], c*GX, row*GY);
+  }
+}
+
+/* ---- 2. A line "console" that mimics Disp (scrolls in the 8-row grid) --- */
+let dispRow=0;
+function homeClear(){ clearScreen(); dispRow=0; }
+function dispLine(str){
+  str=String(str).toUpperCase();
+  if(dispRow>=ROWS){ // scroll up one row
+    const img=ctx.getImageData(0,GY,CW,CH-GY);
+    clearScreen(); ctx.putImageData(img,0,0); dispRow=ROWS-1;
+  }
+  gridText(dispRow,0,str.slice(0,COLS));
+  dispRow++;
+}
+// Disp can take several args; numbers print on their own line, right of label
+function Disp(...args){ for(const a of args) dispLine(a); }
+
+/* ---- 3. Input layer: a key queue + promises ----------------------------- */
+const keyQ=[];                 // pending key tokens
+let keyResolver=null;
+let textEntryActive=false;     // true only while InputStr (name screen) is open
+function pushKey(tok){
+  if(keyResolver){ const r=keyResolver; keyResolver=null; r(tok); }
+  else keyQ.push(tok);
+}
+function nextKey(){
+  return new Promise(res=>{
+    if(keyQ.length) res(keyQ.shift());
+    else keyResolver=res;
+  });
+}
+function flushKeys(){ keyQ.length=0; }
+
+const keypadEl=document.getElementById('keypad');
+// Briefly flash a button's "pressed" look WITHOUT moving keyboard focus, so
+// screen-reader / tab focus is preserved. Keyboard input maps to a key token
+// and flashes the matching on-screen button for visual feedback.
+function flashKey(key){
+  const b=keypadEl.querySelector('[data-key="'+key+'"]');
+  if(!b) return;
+  b.classList.add('pressed');
+  setTimeout(()=>b.classList.remove('pressed'),120);
+}
+
+// Enable only the given data-keys; visually disable the rest. Digit keys are
+// referenced collectively by the token 'digits'. Called by input primitives so
+// the keypad always reflects which keys actually do something on this screen.
+const ALLKEYS=['up','down','clear','del','alpha','0','1','2','3','4','5','6','7','8','9','enter'];
+function setActiveKeys(list){
+  if(keypadEl.classList.contains('booting')){
+    keypadEl.classList.remove('booting');
+    keypadEl.removeAttribute('aria-busy');
+  }
+  const want=new Set();
+  for(const k of list){
+    if(k==='digits'){ for(const d of '0123456789') want.add(d); }
+    else want.add(k);
+  }
+  for(const key of ALLKEYS){
+    const b=keypadEl.querySelector('[data-key="'+key+'"]');
+    if(!b) continue;
+    const on=want.has(key);
+    // Keep native button semantics intact (no `disabled`) so focused keyboard
+    // activation retains focus/ring; remove inactive keys from TAB navigation.
+    b.classList.toggle('off', !on);
+    b.tabIndex = on ? 0 : -1;
+    b.setAttribute('aria-disabled', String(!on));
+  }
+}
+// Is a key currently inactive (off)? Used to ignore clicks/keystrokes for keys
+// that the current screen doesn't use, matching the dimmed visual state.
+function keyOff(key){
+  const b=keypadEl.querySelector('[data-key="'+key+'"]');
+  return !!(b && b.classList.contains('off'));
+}
+// Whether a key token is currently enabled (keyboard presses for disabled keys
+// are ignored so behavior matches the visual state).
+function keyEnabled(token){
+  const key = token && token.startsWith && token.startsWith('ch:') ? 'alpha'
+            : token==='space' ? 'alpha' : token;
+  const b=keypadEl.querySelector('[data-key="'+key+'"]');
+  return !!(b && !b.classList.contains('off'));
+}
+
+keypadEl.addEventListener('click',e=>{
+  const b=e.target.closest('[data-key]'); if(!b) return;
+  if(b.dataset.key==='noop' || b.classList.contains('off')){
+    // Off keys are not actionable; pointer taps should not leave focus there.
+    if(e.detail>0 && b.blur) b.blur();
+    return;
+  }
+  // Keep focus on actionable keys so click users also get a visible focus ring.
+  pushKey(b.dataset.key);
+});
+
+// Keyboard input is applied as game input ONLY when no button is focused. If a
+// button (keypad or control) has focus, the browser handles the key normally
+// (so tabbing to a button and pressing Space/Enter activates THAT button).
+document.addEventListener('keydown',e=>{
+  const ae=document.activeElement;
+  if(ae && (ae.tagName==='BUTTON' || ae.closest && ae.closest('button'))){
+    return; // a button is focused -> let the browser handle the key
+  }
+  // Space: acts as ENTER everywhere EXCEPT the name screen, where it adds a
+  // literal space (visually flashing the A-Z key, which space now lives under).
+  if(e.key===' '){
+    e.preventDefault(); e.stopPropagation();
+    if(textEntryActive){ if(keyEnabled('alpha')){ flashKey('alpha'); pushKey('space'); } }
+    else { if(keyEnabled('enter')){ flashKey('enter'); pushKey('enter'); } }
+    return;
+  }
+  const m={'ArrowUp':'up','ArrowDown':'down','Enter':'enter',
+           'Backspace':'del','Delete':'del','Escape':'clear'};
+  if(m[e.key]!==undefined){
+    e.preventDefault(); e.stopPropagation();
+    if(keyEnabled(m[e.key])){ flashKey(m[e.key]); pushKey(m[e.key]); }
+    return;
+  }
+  if(/^[0-9]$/.test(e.key)){ e.preventDefault(); if(keyEnabled(e.key)){ flashKey(e.key); pushKey(e.key); } return; }
+  if(/^[a-zA-Z]$/.test(e.key)){ e.preventDefault(); if(keyEnabled('alpha')){ flashKey('alpha'); pushKey('ch:'+e.key.toUpperCase()); } }
+}, true);
+
+// Clicking/tapping the LCD should always restore keyboard focus to calculator.
+const focusCalc=()=>calcEl.focus({preventScroll:true});
+cnv.addEventListener('pointerdown',focusCalc);
+cnv.addEventListener('click',focusCalc);
+
+/* primitives built on the key layer */
+async function Pause(){ // wait for ENTER (any key in the original; we use enter)
+  setActiveKeys(['enter']);
+  while(true){const k=await nextKey(); if(k==='enter') return;}
+}
+// Menu(title, [ [label, ()=>...], ... ]) — TI Menu( with arrow navigation
+async function Menu(title, items){
+  let sel=0;
+  // Active keys: navigation + ENTER + digits for each selectable item.
+  const itemDigits=[]; for(let i=0;i<items.length && i<9;i++) itemDigits.push(String(i+1));
+  setActiveKeys(['up','down','enter',...itemDigits]);
+  const render=()=>{
+    homeClear();
+    gridText(0,0,String(title).slice(0,COLS)); // title flush-left, fits 16 cols
+    for(let i=0;i<items.length && i<7;i++){
+      // cursor triangle in col 0 (selected row only); item "n:LABEL" from col 1
+      if(i===sel) gridText(i+1,0,'>');
+      gridText(i+1,1,((i+1)+':'+items[i][0]).slice(0,COLS-1));
+    }
+  };
+  render();
+  while(true){
+    const k=await nextKey();
+    if(k==='up'){sel=(sel-1+items.length)%items.length; render();}
+    else if(k==='down'){sel=(sel+1)%items.length; render();}
+    else if(/^[1-9]$/.test(k)){const n=+k-1; if(n<items.length){sel=n; return items[sel][1];}}
+    else if(k==='enter'){ return items[sel][1]; }
+  }
+}
+// Input "prompt", numeric — returns a number
+async function InputNum(prompt){
+  let buf='';
+  setActiveKeys(['digits','del','clear','enter']);
+  const render=()=>{ homeClear(); for(const ln of prompt.split('\n')) dispLine(ln); dispLine(buf+'_'); };
+  render();
+  while(true){
+    const k=await nextKey();
+    if(/^[0-9]$/.test(k)){buf+=k; render();}
+    else if(k==='del'){buf=buf.slice(0,-1); render();}
+    else if(k==='clear'){buf=''; render();}
+    else if(k==='enter'){ return buf===''?0:parseInt(buf,10); }
+  }
+}
+// Input string (the NAME screen).
+// Physical keyboard: type letters/digits directly; SPACE adds a space.
+// On-screen keypad: A-Z appends a fresh dial slot; UP/DN dial that slot through
+// A..Z, 0..9, then space (wraps). Digit keys append digits; DEL removes;
+// ENTER confirms. The name starts empty. Any name is enterable.
+const DIALSET='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 '; // A-Z, 0-9, then space (last)
+async function InputStr(prompt){
+  let buf='';    // start empty; letters/digits/spaces are added by input
+  textEntryActive=true; // space inserts a literal space while this screen is open
+  setActiveKeys(['up','down','alpha','digits','del','clear','enter']);
+  const render=()=>{
+    homeClear();
+    for(const ln of prompt.split('\n')) dispLine(ln);
+    dispLine(buf+'_');
+    dispLine('');
+    dispLine('A-Z:ADD  UP/DN:');
+    dispLine('DIAL A-Z 0-9 _');
+  };
+  const dial=(d)=>{
+    if(!buf){ buf=(d>0)?DIALSET[0]:DIALSET[DIALSET.length-1]; return; } // empty: start
+    let i=DIALSET.indexOf(buf[buf.length-1]);
+    if(i<0) i=0;                                  // last char not in set -> start at A
+    i=((i+d)%DIALSET.length+DIALSET.length)%DIALSET.length;
+    buf=buf.slice(0,-1)+DIALSET[i];
+  };
+  render();
+  try{
+    while(true){
+      const k=await nextKey();
+      if(k && k.startsWith('ch:')){buf+=k.slice(3).toUpperCase(); render();}   // physical keyboard letter
+      else if(k==='alpha'){ buf+='A'; render(); }                // append a fresh letter to dial
+      else if(k==='up'){ dial(1); render(); }                    // dial last char forward
+      else if(k==='down'){ dial(-1); render(); }                 // dial last char back
+      else if(k==='space'){ buf+=' '; render(); }                // literal space (from A-Z key)
+      else if(/^[0-9]$/.test(k)){buf+=k; render();}
+      else if(k==='del'){buf=buf.slice(0,-1); render();}
+      else if(k==='clear'){buf=''; render();}
+      else if(k==='enter'){ return buf; }
+    }
+  } finally {
+    textEntryActive=false; // restore: space acts as ENTER again outside name entry
+  }
+}
+// getKey poll: returns 105 for ENTER if queued, else 0 (TI getKey semantics)
+function getKey(){
+  for(let i=0;i<keyQ.length;i++){ if(keyQ[i]==='enter'){keyQ.splice(i,1); return 105;} }
+  return 0;
+}
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+
+/* ---- 4. RNG + TI helpers ------------------------------------------------ */
+const rand=()=>Math.random();                 // TI rand in [0,1)
+const intf=x=>Math.floor(x);
+
+/* ---- 5. Global state — the 14-stat block shared across all programs ----- */
+const S={};
+function newGame(){
+  Object.assign(S,{
+    G:100,  // health/life
+    H:1000, // money (legacy; status shows C)
+    C:0,    // money (status display + economy)
+    F:0,    // missions completed
+    R:5,    // crates left
+    I:0,    // cars owned
+    J:0,    // cop bribes
+    O:0,    // medkits
+    K:0,    // (scratch / "all cars" flag in places)
+    Q:2,    // luck
+    P:2,    // item count (vestigial)
+    D:0,    // NORMAL ammo
+    E:0,    // EXPLOSIVE ammo
+    L:0,    // CAR BOMBS
+    M:0,    // MOLOTOVS
+    N:0,    // DEATH-O-TOVS
+    T:0,    // mission temp / car-speed handle
+    name:'PLAYER',
+  });
+}
+newGame();
+
+/* ---- 6. ZCOPS — police encounters (called by ZCAR and KILL PEDS) -------- */
+// Returns when the encounter resolves. Sets a "dead" flag if wasted.
+async function ZCOPS(){
+  // int(rand*Q)+1 -> A ; if A==Q spawn cops, else skip (Lbl θ = exit)
+  let A=intf(rand()*S.Q)+1;
+  if(A!==S.Q) return; // Lbl θ — no cops this time
+  // Lbl Z : spawn 1-5 cops
+  A=intf(rand()*5)+1;
+  homeClear(); Disp("COPS ON YOU"); await Pause();
+
+  while(true){ // Lbl 5 — main cop menu
+    const choice=await Menu("!!!!!!COPS!!!!!!",[
+      ["RUN",       'RUN'],
+      ["FIGHT",     'FIGHT'],
+      ["RESPRAY CAR",'RESPRAY'],
+      ["HEALTH",    'HEALTH'],
+      ["MEDKIT",    'MEDKIT'],
+      ["COPS LEFT", 'LEFT'],
+    ]);
+    if(choice==='LEFT'){ homeClear(); Disp("COPS LEFT",A); await Pause(); continue; }
+    if(choice==='MEDKIT'){
+      if(S.O<=0){ homeClear(); Disp("NO MEDKITS!"); await Pause(); continue; }
+      S.O--; S.G=100; continue;
+    }
+    if(choice==='RESPRAY'){
+      if(S.C<5000){ homeClear(); Disp("NOT ENUFF MONEY"); await Pause(); continue; }
+      S.C-=5000; return; // Lbl Y — got away clean
+    }
+    if(choice==='HEALTH'){ homeClear(); Disp("HEALTH",S.G); await Pause(); continue; }
+
+    if(choice==='RUN'){
+      // Lbl A : 50/50 lose them or can't ditch
+      const r=intf(rand()*2)+1;
+      if(r===1){ homeClear(); Disp("LOST EM"); return; } // Lbl Y -> θ exit
+      // Lbl 9 -> 10 : can't ditch, they fire
+      homeClear(); Disp("CAN'T DITCH EM"); await Pause();
+      const fired=await copsFire(A); if(fired==='dead') return;
+      continue;
+    }
+
+    if(choice==='FIGHT'){
+      const sub=await Menu("FIGHT",[
+        ["COP BRIBE",  'BRIBE'],
+        ["NORM AMMO",  'NORM'],
+        ["EXPLOSIVES", 'EXPL'],
+        ["CAR BOMB",   'BOMB'],
+        ["MOLOTOVS",   'MOLO'],
+        ["DEATHOTOVS", 'DEATH'],
+        ["BACK",       'BACK'],
+      ]);
+      if(sub==='BACK') continue;
+      if(sub==='BRIBE'){
+        if(S.J>0){S.J--; return;} else {homeClear();Disp("NO BRIBES!");await Pause();}
+        continue;
+      }
+      if(sub==='NORM'){
+        if(S.D>0){S.D--; A=Math.max(0,A-1); homeClear(); Disp("GOT ONE!"); await Pause();}
+        else {homeClear(); Disp("NO AMMO!"); await Pause();}
+      } else if(sub==='EXPL'){
+        if(S.E>0){S.E--; A=Math.max(0,A-3); homeClear(); Disp("GOT 3"); await Pause();}
+        else {homeClear(); Disp("NO EXPLOSIVES!"); await Pause();}
+      } else if(sub==='BOMB'){
+        if(S.L>0){S.L--; A=0; homeClear(); Disp("GOT EM ALL"); await Pause(); return;}
+        else {homeClear(); Disp("NO BOMBS!"); await Pause();}
+      } else if(sub==='MOLO'){
+        if(S.M>0){S.M--; A=0; homeClear(); Disp("GOT EM ALL"); await Pause(); return;}
+        else {homeClear(); Disp("NO MOLOTOVES!"); await Pause();}
+      } else if(sub==='DEATH'){
+        if(S.N>0){S.N--; A=0; homeClear(); Disp("GOT EM ALL!"); await Pause(); return;}
+        else {homeClear(); Disp("NO DEATHS...."); await Pause();}
+      }
+      if(A<=0){ // cleared them out by attrition
+        // original falls back to menu; cops simply depleted
+        homeClear(); Disp("COPS LEFT",0); await Pause();
+        return;
+      }
+    }
+  }
+}
+// Lbl 10 cop return-fire block
+async function copsFire(A){
+  homeClear(); Disp("THEYRE FIRING!"); await Pause();
+  const r=intf(rand()*3)+1;
+  if(r<=2){ homeClear(); Disp("THEY MISSED!"); await Pause(); return 'ok'; }
+  // Lbl M : you got hit, lose up to 14 hp
+  const dmg=intf(rand()*15);
+  homeClear(); Disp("U GOT HIT!"); await Pause();
+  S.G-=dmg; if(S.G<0) S.G=0;
+  if(S.G<=0){ homeClear(); Disp("WASTED!"); await Pause(); S.dead=true; return 'dead'; }
+  return 'ok';
+}
+
+/* ---- 7. ZCAR — car-jacking ---------------------------------------------- */
+async function ZCAR(){
+  await ZCOPS(); if(S.dead) return;
+  // int(rand*Q) -> A ; if A==Q alarm/empty path else you get a car
+  const A=intf(rand()*S.Q);
+  if(A!==S.Q){ homeClear(); Disp("YOU GOT A","CAR!"); S.I++; await Pause(); return; }
+  // Lbl 9 : 50/50 alarm vs no cars
+  const r=intf(rand()*2)+1;
+  if(r===1){ homeClear(); Disp("HAD AN ALARM!"); await Pause(); await ZCOPS(); }
+  else { homeClear(); Disp("NO CARS TO GANK!"); await Pause(); }
+}
+
+/* ---- 8. ZPEDS — kill PEDS (after ZCOPS in main loop) ------------------- */
+async function ZPEDS(){
+  while(true){ // Lbl θθ
+    const w=await Menu("WITH WHAT?",[
+      ["NORMAL AMMO",  'NORM'],
+      ["XPLOSIVE AMMO",'EXPL'],
+      ["CAR BOMB",     'BOMB'],
+      ["MOLOTOVS",     'MOLO'],
+      ["DEATH-O-TOVS", 'DEATH'],
+      ["RUN EM OVER",  'RUN'],
+      ["BACK",         'BACK'],
+    ]);
+    if(w==='BACK') return;            // Lbl MM
+    if(w==='RUN'){
+      if(S.I<=0){ homeClear(); Disp("NO CARS!"); await Pause(); continue; }
+      const kills=intf(rand()*10)+1, cash=kills*100;
+      homeClear(); Disp("YOU KILLED",kills,"PEDS...","YOU GOT",cash,"BUCKS!");
+      S.C+=cash; S.I--; await Pause(); return;
+    }
+    // weapon paths: fixed kill/cash payouts, consume one unit
+    const map={NORM:['D',1,100],EXPL:['E',3,300],BOMB:['L',50,5000],
+               MOLO:['M',8,800],DEATH:['N',13,1300]};
+    const [stat,kills,cash]=map[w];
+    if(S[stat]<=0){
+      const msg={NORM:"NO NORM. AMMO!",EXPL:"NO XPLOSIVE AMMO",BOMB:"NO CAR BOMB!",
+                 MOLO:"NO MOLOTOVS!",DEATH:"NO DEATH-O-TOVS!"}[w];
+      homeClear(); Disp(msg); await Pause(); continue;
+    }
+    S[stat]--; S.C+=cash;
+    homeClear(); Disp("YOU KILLED",kills,"PEDS","YOU GOT",cash,"BUCKS"); await Pause();
+    return;
+  }
+}
+
+/* ---- 9. ZCRATE — bust a crate, random item ------------------------------ */
+async function ZCRATE(){
+  if(S.R<=0){
+    S.R=0;
+    homeClear(); Disp("NO CRATES LEFT"); await Pause();
+    return;
+  }
+  S.R--;
+  // KL: pick 1-8
+  const b=intf(rand()*8)+1;
+  const tbl=[null,
+    ["COP BRIBE!", 'J'],["MEDKIT!",'O'],["LUCK POTION!",'Q'],["NORM AMMO!",'D'],
+    ["EXPLOSIVE!",'E'],["CAR BOMB!",'L'],["MOLOTOVS!",'M'],["DEATHOTOVS!",'N']];
+  const [msg,stat]=tbl[b];
+  S[stat]++;
+  homeClear(); Disp(msg); await Pause();
+}
+
+/* ---- 10. ZSHOP — the store ---------------------------------------------- */
+async function ZSHOP(){
+  const buy=async(label,price,stat)=>{
+    const qty=await InputNum("PRICE IS...\n"+price+"\nYOU HAVE\n"+S.C+"\nHOW MANY?");
+    const cost=qty*price;
+    if(cost>S.C){ homeClear(); Disp("NOT ENUFF MULA!"); await Pause(); return; }
+    S[stat]+=qty; S.C-=cost;
+  };
+  while(true){ // Lbl 1
+    const page1=await Menu("WHAT TO BUY?????",[
+      ["COP BRIBE",   'A'],
+      ["MEDKIT",      'B'],
+      ["LUCK POTION", 'C'],
+      ["NORM. AMMO",  'D'],
+      ["XPLOSIVE AMMO",'E'],
+      ["CAR BOMB",    'F'],
+      ["MORE",        'WW'],
+    ]);
+    if(page1==='A') await buy("COP BRIBE",30000,'J');
+    else if(page1==='B') await buy("MEDKIT",15000,'O');
+    else if(page1==='C') await buy("LUCK POTION",60000,'Q');
+    else if(page1==='D') await buy("NORM. AMMO",5,'D');
+    else if(page1==='E') await buy("XPLOSIVE AMMO",10000,'E');
+    else if(page1==='F') await buy("CAR BOMB",50000,'L');
+    else if(page1==='WW'){
+      const page2=await Menu("MORE",[
+        ["MOLOTOVS",   'G'],
+        ["DEATH-O-TOVS",'H'],
+        ["BACK",       'I'],
+        ["LEAVE",      'J'],
+      ]);
+      if(page2==='G') await buy("MOLOTOVS",15000,'M');
+      else if(page2==='H') await buy("DEATH-O-TOVS",17500,'N');
+      else if(page2==='I') continue;       // back to page 1
+      else if(page2==='J') return;          // leave
+    }
+  }
+}
+
+/* ---- 11. ZMENU2 — MORE menu (shop / sell / quit) ------------------------ */
+async function ZMENU2(){
+  while(true){
+    const c=await Menu("GRAND THEFT AUTO",[
+      ["SHOP",     'A'],
+      ["SELL CARS",'B'],
+      ["BACK",     'C'],
+      ["QUIT",     'LL'],
+    ]);
+    if(c==='A'){ await ZSHOP(); continue; }
+    if(c==='C') return;
+    if(c==='LL'){ S.quit=true; return; }
+    if(c==='B'){
+      // price per car in [502,1000]
+      let price; do{ price=intf(rand()*1000)+1; }while(price<=501);
+      homeClear(); Disp("YOU'VE GOT",S.I,"CARS","PRICE IS",price,"PER SELL"); await Pause();
+      const x=await InputNum("SELL HOW MANY?");
+      if(x>S.I){ continue; } // original loops back; can't sell more than you have
+      const total=price*x;
+      homeClear(); Disp("YOU GOT",total,"BUCKS."); S.I-=x; S.C+=total; await Pause();
+      return;
+    }
+  }
+}
+
+/* ---- 12. GTAJOBS — the 25-mission engine -------------------------------- */
+// Job types by F:  0-11 button-mash | 12-16 number-guess |
+//                  17-19 timing/line | 20-24 boss fight
+
+// Centered header row: "JOB N" centered on row 0, body lines from row 1.
+function jobHeader(n, bodyLines){
+  homeClear();
+  const head=('JOB '+n);
+  gridText(0, Math.max(0, Math.floor((COLS-head.length)/2)), head);
+  for(let i=0;i<bodyLines.length && i<7;i++) gridText(i+1,0,bodyLines[i].slice(0,COLS));
+}
+
+async function GTAJOBS(){
+  // L1(11)->I ; I drives a car-speed gate (we map cars to a speed handle)
+  // In the group, I is "cars"; jobs 20+ require a fast car. We approximate
+  // car "speed" as I*? — but the boss gate checks I<30. Owning >=30 "speed"
+  // means many cars in this port. We keep faithful behavior: gate on I.
+  S.T=S.I;
+
+  if(S.F>=25){ await ZEND(); return; }
+
+  const W=500*S.F+1000; // base payout for early jobs
+
+  /* ---- Jobs 0-11 : ENTER-mashing quota ---- */
+  if(S.F<=11){
+    const quota=[15,30,40,50,55,60,65,70,75,80,85,90][S.F];
+    jobHeader(S.F+1,["WHEN U SEE GO","PRESS ENTER AS","MANY TIMES AS U","CAN TIL U SEE","STOP","QUOTA "+quota]);
+    await Pause();
+    // GO!
+    setActiveKeys(['enter']);   // only ENTER does anything during the mash
+    flushKeys();
+    let X=0;
+    const renderMash=(label,msLeft)=>{
+      const secs=(Math.max(0,msLeft)/1000).toFixed(1);
+      homeClear();
+      gridText(2,6,label);
+      gridText(4,0,"PRESS COUNT");
+      gridText(5,6,String(X).slice(0,COLS-6));
+      gridText(6,0,"TIME LEFT");
+      gridText(7,5,(secs+"S").slice(0,COLS-5));
+    };
+    renderMash("GO!!",3500);
+    // For(Z,1,500) getKey loop — ~ a timed mash window
+    const tEnd=performance.now()+3500;
+    while(performance.now()<tEnd){
+      if(getKey()===105) X++;
+      renderMash("GO!!",tEnd-performance.now());
+      await sleep(0);
+    }
+    renderMash("STOP",0);
+    await sleep(3000);
+    homeClear(); Disp("U GOT",X); await Pause();
+    homeClear();
+    if(X<quota){ Disp("U FAILED!"); /* F/R unchanged net */ }
+    else { Disp("NICE WORK,",S.name,"U GOT",W,"BUCKS"); S.C+=W; S.F++; S.R++; }
+    await Pause(); return;
+  }
+
+  /* ---- Jobs 12-16 : guess the number (10 tries) ---- */
+  if(S.F<=16){
+    const Vtab={12:500,13:1000,14:2000,15:4000,16:8000};
+    const V=Vtab[S.F];
+    const W2=2000;
+    const target=intf(rand()*V)+1; // 1..V
+    jobHeader(S.F+1,["U HAVE 10 TRIES","TO GUESS THE","CORRECT NUMBER","BETWEEN 1 AND","  "+V]);
+    await Pause();
+    let y=0, win=false;
+    while(y<10 && !win){
+      y++;
+      const guess=await InputNum("TRY "+y+"\nGUESS 1-"+V);
+      if(guess===target){ win=true; }
+      else if(guess<target){ homeClear(); Disp("TOO LOW"); await Pause(); }
+      else { homeClear(); Disp("TOO HIGH"); await Pause(); }
+      if(win){ homeClear(); Disp("NICE"); await Pause(); }
+    }
+    homeClear();
+    if(win){ Disp("U GOT",W2,"DOLLARS"); S.C+=W2; S.F++; S.R++; }
+    else { Disp("U FAILED","IT WAS",target); }
+    await Pause(); return;
+  }
+
+  /* ---- Jobs 17-19 : timing — stop the moving line in the target zone ---- */
+  if(S.F<=19){
+    if(S.I<=0){ homeClear(); Disp("U GOTTA HAVE","A CAR FOR THIS","MISSION"); await Pause(); return; }
+    const W3=2200;
+    const V={17:3,18:2,19:1}[S.F]; // shrinking target half-width
+    jobHeader(S.F+1,["WHEN THE LINE","GOING ACROSS","HITS THE OTHER","LINE PRESS ENTER"]);
+    await Pause();
+    // target center somewhere across; draw it, then a sweeper moves L->R
+    const center=20+intf(rand()*60);
+    setActiveKeys(['enter']);   // only ENTER stops the line
+    flushKeys();
+    let X=1, hit=false, pressed=false;
+    while(X<=92 && !pressed){
+      // draw screen: target band at row 31 plus moving marker
+      clearScreen();
+      for(let t=center-V;t<=center+V;t++) if(t>=0&&t<CW) px(t,40);
+      px(X,40);
+      gridText(0,0,"STOP IT IN BAND");
+      if(getKey()===105){ pressed=true; if(X>=center-V && X<=center+V) hit=true; break; }
+      X+=2; await sleep(28);
+    }
+    homeClear();
+    if(hit){ Disp("GOOD","U GOT",W3,"BUCKS"); S.F++; S.R++; S.C+=W3; }
+    else { Disp("MISSED"); }
+    await Pause(); return;
+  }
+
+  /* ---- Jobs 20-24 : boss fight (turn-based weapon combat) ---- */
+  {
+    const needCarFast = S.I<30; // original: F>11 and I<30 -> need a faster car
+    if(needCarFast){
+      homeClear(); Disp("U NEED A CAR","W/ AT LEAST","30 SPEED"); await Pause(); return;
+    }
+    let V={20:500,21:700,22:900,23:1100,24:1300}[S.F]; if(S.F>=24) V=1500;
+    const W4=200*V;
+    homeClear();
+    jobHeader(S.F+1,["WE WANT U TO","KILL A BASTARD","GANG LEADER","ANY WAY U CAN"]);
+    await Pause();
+    if(S.D+S.E+S.L+S.M+S.N===0){ homeClear(); Disp("U NEED WEAPONS","FOR THIS JOB"); await Pause(); return; }
+    homeClear(); Disp("HES GOT",V,"HITPOINTS"); await Pause();
+
+    while(true){ // Lbl θθ
+      if(S.D+S.E+S.L+S.M+S.N===0){ homeClear(); Disp("U DONT HAVE ANY","WEAPONS"); await Pause(); return; }
+      if(S.G<=0){
+        homeClear(); Disp("U DIED"); S.G=100; await Pause();
+        // lose everything (original H-flag path)
+        S.D=S.E=S.L=S.M=S.N=0; S.I=0; S.K=0;
+        homeClear(); Disp("U LOST ALL","UR WEAPONS AND","UR CAR"); await Pause(); return;
+      }
+      const wpn=await Menu("WHAT TO USE",[
+        ["NORMAL AMMO", 'AA'],
+        ["XPLOSIV AMMO",'AB'],
+        ["CAR BOMB",    'AC'],
+        ["MOLOTOVS",    'AD'],
+        ["DEATH-O-TOVS",'AE'],
+      ]);
+      let X=0, ok=true;
+      if(wpn==='AA'){ if(S.D<=0){ok=false;} else {S.D--; X=1;} }
+      else if(wpn==='AB'){ if(S.E<=0){ok=false;} else {S.E--; X=3;} }
+      else if(wpn==='AC'){ if(S.L<=0){ok=false;} else {S.L--; S.K=0; S.I=0; X=50;} }
+      else if(wpn==='AD'){ if(S.M<=0){ok=false;} else {S.M--; X=8;} }
+      else if(wpn==='AE'){ if(S.N<=0){ok=false;} else {S.N--; X=13;} }
+      if(!ok) continue; // back to θθ (no ammo of that kind)
+
+      // hit roll: int(rand 1..3); hit if <=2 OR X>=50 (big weapons never miss)
+      const roll=intf(rand()*3)+1;
+      if(roll<=2 || X>=50){
+        V-=X; if(V<=0) V=0;
+        homeClear(); Disp("U DID",X,"DAMAGE!",V,"LEFT"); await Pause();
+      } else {
+        homeClear(); Disp("U MISSED"); await Pause();
+      }
+      if(V===0){
+        homeClear(); Disp("U KILLED HIM!!"); S.F++; await Pause();
+        homeClear(); Disp("U GOT",W4,"DOLLARS OFFA","HIS CARCASS"); await Pause();
+        S.C+=W4; return;
+      }
+      // guards fire back
+      homeClear(); Disp("HIS GUARDS","ARE FIRING","BACK!!"); await Pause();
+      const gr=intf(rand()*2)+1;
+      if(gr===2){
+        const dmg=intf(rand()*6)+8; // 8..13
+        S.G-=dmg; if(S.G<0) S.G=0;
+        homeClear(); Disp("YOU GOT SHOT!","HEALTH MINUS",dmg,"HEALTH",S.G); await Pause();
+      } else {
+        homeClear(); Disp("THEY MISSED U"); await Pause();
+      }
+    }
+  }
+}
+
+/* ---- 13. ZEND — victory ------------------------------------------------- */
+async function ZEND(){
+  homeClear();
+  Disp("YOU BEAT GTA!","","","","2000 CODY","SOFTWARE INC.");
+  S.beat=true;
+}
+
+/* ---- 14. ZCHEAT — the GOURANGA / CODY cheat ----------------------------- */
+function ZCHEAT(){
+  S.G=1000; S.H=1000; S.I=1000; S.J=1000; S.K=1000; S.L=1000; S.M=1000;
+  S.N=1000; S.O=1000; S.P=1000; S.Q=1000; S.D=1000; S.E=1000; S.C=1000;
+  S.name='CHEATER';
+}
+
+/* ---- 15. STATUS screen (two pages, like prgmGTA Lbl Z) ------------------ */
+async function STATUS(){
+  homeClear();
+  gridText(0,0,"GRAND THEFT AUTO");
+  gridText(1,0,"LIFE");        gridText(1,13,String(S.G));
+  gridText(2,0,"MONEY");       gridText(2,9,String(S.C));
+  gridText(3,0,"CARS");        gridText(3,13,String(S.I));
+  gridText(4,0,"MISSNS COMPLT");gridText(4,14,String(S.F));
+  gridText(5,0,"CRATES LEFT"); gridText(5,14,String(S.R));
+  gridText(7,0,("NAME "+String(S.name)).slice(0,COLS));
+  await Pause();
+  homeClear();
+  gridText(0,0,"COP BRIBE");   gridText(0,13,String(S.J));
+  gridText(1,0,"MEDKIT");      gridText(1,13,String(S.O));
+  gridText(2,0,"LUCK PTN");    gridText(2,13,String(S.Q));
+  gridText(3,0,"NORM AMMO");   gridText(3,13,String(S.D));
+  gridText(4,0,"EXPLOSIVE");   gridText(4,13,String(S.E));
+  gridText(5,0,"CAR BOMB");    gridText(5,13,String(S.L));
+  gridText(6,0,"MOLOTOVS");    gridText(6,13,String(S.M));
+  gridText(7,0,"DEATHOTOVS");  gridText(7,13,String(S.N));
+  await Pause();
+}
+
+/* ---- 16. GTAINST — instructions screen ---------------------------------- */
+async function GTAINST(){
+  const pages=[
+    ["THE OBJECT OF","THIS GAME IS TO","COMPLETE ALL 25","MISSIONS.","","IF HEALTH HITS 0","YOU DIE & LOSE","CAR + WEAPONS"],
+    ["LUCK DETERMINES","YOUR ODDS OF","STEALING A CAR","OR KILLING PEDS","","50 LUCK =","1/2 CHANCE"],
+    ["WHAT THINGS DO","BRIBE: ESC COPS","MEDKIT: +HEALTH","LUCK PTN: +LUCK","NORM: 1 COP","EXPLOSIVE: 3","BOMB:50 MOLO:8","DEATHOTOV: 13"],
+    ["DONT FORGET","LUCK IS","EVERYTHING"],
+  ];
+  for(const p of pages){ homeClear(); Disp(...p); await Pause(); }
+}
+
+/* ---- 17. Title screen (Pic1) -------------------------------------------- */
+// The real GTA.8XG Pic1 bitmap (95x63), 1bpp packed MSB-first then base64.
+// Decoded once and blitted pixel-for-pixel onto the 96x64 LCD.
+const PIC1_W=95, PIC1_H=63;
+const PIC1_B64=
+  "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/+//v+AAAAAAAAAB/9//f+AAAAAAAAAD"+
+  "AYGAwcAAAAAAAAAGAwMBgYAAAAAAAAAMAAYAAwAAAAAAAAAYAAwABgAAAAAAAAAwABgADAAAAAAAAABg"+
+  "ADA/+AAAAAAAAADD4GD/8AAAAAAAAAGHwMHAYAAAAAAAAAMBgYMAwAAAAAAAAAYDAwcBgAAAAAAAAA/+"+
+  "Bg//gAAAAAAAAB/8DA//AAAAAAAAAAAAAAAA////gAAAAAAAAAACAAACgAAAAAAAAAAIAAAJAAAAAAAA"+
+  "AAAgAAAhAAAAAAAAAACAAACBAAAAAAAAAAIAAAIEAAAAAAAAAAgAAAjQAAAAAAAAA////iPAAAAAAAAAC"+
+  "AAAI4/AgAAAAAAAIAAAnN+CAAAAAAAAgAAC/F4IkAAAAAACAAAL8lgmwAAAAAAIAAAjyQBKAAAAAAAgA"+
+  "ACzBAEUAAAAAACAAAIYEAJIAAAAAAP///gIQAVgAAAAAAgAACANPwUAAAAAABf//k/+/w7//8AAAE///"+
+  "SAH/AcAB/AAAL//+p/vgAPAD+AAAn//6n/fcACPn8AABAAAGf+/8AH/v4AAH///4AB/8AB/fwAAQAABM"+
+  "B7/4AB8/gABAAAEEAH/gAAh/AAEAAAQH//2AAB/+AAQAABAEAfgAAA+AABAAAEfQAf8AAAAAAEAAAR/AA"+
+  "f8AAAAAAQAABD+AAfwAAAAABAAAEH8AAAAAAAAAEAAAQP4AAAAAAAAAQAABA/wAAAAAAAAB///8CPAAAA"+
+  "AAAAACAAAIIAAAAAAAAAAEEAIQgA2JmOru4AAIcA4iACKqqJUQgAAQQAhIAFZ1UTsxAAAgAACgAKqqol"+
+  "RCAAB///+AANVVhK6EAAAAAAAAAAAAAAAAAAAAAAAAAAAJXcAAAAAAAAAAAAAqkoAAAAAAAAAAAAB1JQA"+
+  "AAAAAAAAAAACqSgAAAAAAAAAAAAFcnAAAAA=";
+const PIC1=(()=>{
+  const bin=atob(PIC1_B64), bytes=new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
+  return bytes;
+})();
+function drawTitle(){
+  clearScreen();
+  const ox=Math.floor((CW-PIC1_W)/2); // center 95 in 96
+  for(let y=0;y<PIC1_H;y++){
+    for(let x=0;x<PIC1_W;x++){
+      const i=y*PIC1_W+x;
+      if((PIC1[i>>3]>>(7-(i&7)))&1) px(ox+x,y);
+    }
+  }
+}
+
+/* ---- 18. Main launcher (prgmGTA) ---------------------------------------- */
+async function mainGame(){
+  while(true){ // Lbl 1
+    if(S.G===0){ return; } // dead -> back to main menu
+    const c=await Menu("GRAND THEFT AUTO",[
+      ["STATUS",      'Z'],
+      ["HIJACK CAR",  'CAR'],
+      ["KILL PEDS",   'PEDS'],
+      ["BUST CRATE",  'CRATE'],
+      ["GO TO PHONES",'JOBS'],
+      ["MORE",        'MORE'],
+    ]);
+    if(c==='Z'){ await STATUS(); }
+    else if(c==='CAR'){ S.dead=false; await ZCAR(); if(S.dead){ await deathReset(); return; } }
+    else if(c==='PEDS'){ S.dead=false; await ZCOPS(); if(S.dead){ await deathReset(); return; } await ZPEDS(); }
+    else if(c==='CRATE'){ await ZCRATE(); }
+    else if(c==='JOBS'){ await GTAJOBS(); if(S.beat) return; }
+    else if(c==='MORE'){ await ZMENU2(); if(S.quit) return; }
+  }
+}
+async function deathReset(){
+  // ZCOPS "WASTED!" leaves you dead; original Stops back to launcher.
+  S.dead=false;
+}
+
+/* ---- 19. Boot / MAIN MENU (prgmGTA top) --------------------------------- */
+async function boot(){
+  flushKeys();
+  // Cheat button reloads with #cheat -> start a fresh cheated game immediately.
+  if(location.hash==='#cheat'){
+    try{ history.replaceState(null,'',location.pathname+location.search); }catch(e){ location.hash=''; }
+    newGame(); ZCHEAT();           // clean slate, all stats maxed, name = CHEATER
+    homeClear();
+    Disp("CHEATS ACTIVATED","","ALL STATS MAXED","NAME: CHEATER");
+    await Pause();
+    S.beat=false; S.quit=false;
+    await mainGame();
+    if(S.beat){ await Pause(); }
+  }
+  drawTitle(); await Pause();
+  while(true){
+    const c=await Menu("MAIN MENU",[
+      ["NEW GAME",     'NEW'],
+      ["INSTRUCTIONS", 'INST'],
+      ["QUIT",         'QUIT'],
+    ]);
+    if(c==='INST'){ await GTAINST(); continue; }
+    if(c==='QUIT'){ homeClear(); Disp("DONE."); return; }
+    if(c==='NEW'){
+      newGame();
+      // Single NAME prompt with two magic words (case-insensitive, no 2nd prompt):
+      //  GOURANGA -> name stays GOURANGA, all stats maxed, no extra message
+      //  CODY     -> fun welcome-back message + all stats maxed
+      const norm=s=>s.trim().toUpperCase();
+      const n=await InputStr("NAME");
+      const nn=norm(n);
+      if(nn==='GOURANGA'){
+        ZCHEAT(); S.name='GOURANGA'; // max everything, keep the name as GOURANGA
+      } else if(nn==='CODY'){
+        ZCHEAT(); S.name='CODY';
+        homeClear();
+        Disp("WELCOME BACK","BOSS!","","THE CITY IS","YOURS AGAIN.","","STATS MAXED.");
+        await Pause();
+      } else {
+        S.name=n||'PLAYER';
+      }
+      S.beat=false; S.quit=false;
+      await mainGame();
+      if(S.beat){ await Pause(); }
+      // back to main menu after returning
+      drawTitle(); await Pause();
+    }
+  }
+}
+
+/* ---- 20. wire up control buttons + start -------------------------------- */
+btnResetEl.onclick=()=>{
+  sessionStorage.setItem('gtaFocusAfterReload','btnReset');
+  flushKeys();
+  newGame();
+  location.reload();
+};
+
+// "Activate Cheat" button: reboot into a brand-new cheated game. Preserves
+// nothing — a clean restart with the cheat applied, in the spirit of the
+// original (which only granted the cheat at character creation).
+btnCheatEl.onclick=()=>{
+  sessionStorage.setItem('gtaFocusAfterReload','btnCheat');
+  location.hash='cheat';
+  location.reload();
+};
+
+// Restore focus target after an intentional reload-triggering button press.
+const focusAfterReload=sessionStorage.getItem('gtaFocusAfterReload');
+if(focusAfterReload==='btnReset' && btnResetEl) btnResetEl.focus({preventScroll:true});
+else if(focusAfterReload==='btnCheat' && btnCheatEl) btnCheatEl.focus({preventScroll:true});
+if(focusAfterReload) sessionStorage.removeItem('gtaFocusAfterReload');
+
+clearScreen();
+setActiveKeys(['enter']); // first interactive frame matches title behavior: ENTER active, other keypad keys off
+boot();
+</script>
