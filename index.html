@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>TI-OG Plus GTA</title>
+  <link rel="stylesheet" href="MyHtml83Game.css" />
+</head>
+<body>
+  <div class="calc" id="calc" tabindex="0" aria-label="Calculator">
+    <div class="brand"><span>TI-OG Plus</span><small>GTA · cody software inc.</small></div>
+    <div class="bezel scanlines">
+      <canvas class="screen" id="scr" width="96" height="64" aria-label="Calculator screen"></canvas>
+    </div>
+
+    <div class="topbtns">
+      <button id="btnReset">Reboot Calculator</button>
+      <button id="btnCheat">Activate Cheat (max all stats)</button>
+    </div>
+
+    <div class="keys booting" id="keypad" aria-busy="true">
+      <div class="row">
+        <button class="k dir" data-key="up">▲</button>
+        <button class="k dir" data-key="down">▼</button>
+        <button class="k" data-key="clear">CLR</button>
+        <button class="k" data-key="del">DEL</button>
+        <button class="k" data-key="alpha">A-Z</button>
+      </div>
+      <div class="row">
+        <button class="k" data-key="1">1</button>
+        <button class="k" data-key="2">2</button>
+        <button class="k" data-key="3">3</button>
+        <button class="k" data-key="4">4</button>
+        <button class="k" data-key="5">5</button>
+      </div>
+      <div class="row">
+        <button class="k" data-key="6">6</button>
+        <button class="k" data-key="7">7</button>
+        <button class="k" data-key="8">8</button>
+        <button class="k" data-key="9">9</button>
+        <button class="k" data-key="0">0</button>
+      </div>
+      <div class="row">
+        <button class="k enter enterfull" data-key="enter">ENTER</button>
+      </div>
+    </div>
+    <div class="hint">↑/↓ dial letters / digits / space · A-Z adds a letter (SPACE adds a space) · ENTER selects, mashes jobs, confirms · DEL / CLR edit</div>
+  </div>
+
+  <section class="kbdinfo" aria-label="Keyboard navigation">
+    <h3>Keyboard Navigation</h3>
+    <div class="kbdgrid">
+      <div><b>Enter</b> = Select / Confirm</div>
+      <div><b>Space</b> = Enter (except NAME)</div>
+      <div><b>Tab / Shift+Tab</b> = Move focus</div>
+      <div><b>Focused button</b> = Space / Enter click</div>
+      <div><b>Arrow Up/Down</b> = Move / Dial</div>
+      <div><b>0-9</b> = Number input</div>
+      <div><b>A-Z</b> = Type letters (NAME)</div>
+      <div><b>Backspace/Delete</b> = DEL</div>
+      <div><b>Escape</b> = CLR</div>
+      <div><b>Tip:</b> click page to route keys</div>
+    </div>
+  </section>
+
+  <script src="MyHtml83Game.js"></script>
+</body>
+</html>
