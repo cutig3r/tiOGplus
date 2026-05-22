@@ -1,6 +1,7 @@
 "use strict";
 /* ===========================================================================
-   GRAND THEFT AUTO — TI-83+ engine, faithful JS port.
+    Grand Theft Auto (TI-83+ BASIC) — browser engine
+     Faithful re-implementation of Cody Gentry's GTA.8XG (2000).
    The original is a set of TI-BASIC programs that share global vars via lists.
    We model the same globals and the same control flow as cooperating
    coroutines driven by a tiny screen + key abstraction.
